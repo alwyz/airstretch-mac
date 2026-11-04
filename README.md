@@ -129,7 +129,7 @@ cmake --build build-legacy --config Release
 scripts/check-legacy-mac.sh build-legacy/AirStretch_artefacts/Release
 ```
 
-The GitHub workflow's **macOS 10.8 legacy** job does all of this and uploads `AirStretch-macOS-10.8-legacy`, containing a VST3 zip and an AU zip. Unzip on the Mountain Lion Mac and copy:
+The GitHub workflow's **macOS 10.8 legacy** job does all of this and publishes the result as the `mac-10.8-latest` release: one zip, `AirStretch-macOS-10.8.zip`, with `VST3/` and `AU/` folders and an `INSTALL.txt`. Unzip it on the Mountain Lion Mac and copy (each bundle may show as a plain folder; copy the whole thing):
 
 - `AirStretch.vst3` → `/Library/Audio/Plug-Ins/VST3/`
 - `AirStretch.component` → `/Library/Audio/Plug-Ins/Components/`
