@@ -29,10 +29,17 @@ if(JUCE_DIR)
     add_subdirectory(${JUCE_DIR} ${CMAKE_BINARY_DIR}/JUCE)
 else()
     include(FetchContent)
+    set(AIRSTRETCH_JUCE_PATCH)
+    if(AIRSTRETCH_LEGACY_MAC)
+        # JUCE 6 needs a small fix to build with current Xcode (see the script)
+        set(AIRSTRETCH_JUCE_PATCH PATCH_COMMAND ${CMAKE_COMMAND} -DJUCE_SRC=<SOURCE_DIR>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/PatchJuce6.cmake)
+    endif()
     FetchContent_Declare(JUCE
         GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
         GIT_TAG ${AIRSTRETCH_JUCE_TAG}
-        GIT_SHALLOW TRUE)
+        GIT_SHALLOW TRUE
+        ${AIRSTRETCH_JUCE_PATCH})
     FetchContent_MakeAvailable(JUCE)
 endif()
 
