@@ -1,0 +1,86 @@
+name: Build AirStretch
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS
+          - os: windows-latest
+            name: Windows
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run DSP test
+        shell: bash
+        run: |
+          if [ -f build/Release/EngineTest.exe ]; then build/Release/EngineTest.exe; \
+          else build/EngineTest; fi
+
+      - name: Upload plugins
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirStretch-${{ matrix.name }}
+          path: |
+            build/AirStretch_artefacts/Release/VST3
+            build/AirStretch_artefacts/Release/AU
+            build/AirStretch_artefacts/Release/Standalone
+
+  # OS X 10.8 Mountain Lion build (JUCE 6.1.6, 64-bit Intel, VST3 + AU), for
+  # older hosts such as Pro Tools 11 through a wrapper like Blue Cat PatchWork.
+  # Apple's current tools only officially target macOS 10.13+, so this uses the
+  # oldest Xcode on the runner and then checks the binaries for 10.8 compatibility.
+  mac-legacy:
+    name: macOS 10.8 legacy
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the oldest installed Xcode
+        run: |
+          for x in /Applications/Xcode_16.app /Applications/Xcode_16.0.app /Applications/Xcode_16.1.app /Applications/Xcode_16.2.app; do
+            if [ -d "$x" ]; then sudo xcode-select -s "$x"; break; fi
+          done
+          xcodebuild -version
+          echo "SDK: $(xcrun --show-sdk-version)"
+
+      - name: Configure
+        run: >
+          cmake -S . -B build-legacy -DCMAKE_BUILD_TYPE=Release
+          -DAIRSTRETCH_LEGACY_MAC=ON -DAIRSTRETCH_BUILD_TESTS=OFF
+          -DCMAKE_CXX_FLAGS="-Wunguarded-availability"
+
+      - name: Build
+        run: cmake --build build-legacy --config Release --parallel
+
+      - name: Check binaries for OS X 10.8 compatibility
+        run: scripts/check-legacy-mac.sh build-legacy/AirStretch_artefacts/Release
+
+      - name: Package (ditto keeps the bundles intact)
+        run: |
+          mkdir -p dist
+          cd build-legacy/AirStretch_artefacts/Release
+          ditto -c -k --keepParent VST3/AirStretch.vst3 "$GITHUB_WORKSPACE/dist/AirStretch-VST3-macOS-10.8.zip"
+          ditto -c -k --keepParent AU/AirStretch.component "$GITHUB_WORKSPACE/dist/AirStretch-AU-macOS-10.8.zip"
+
+      - name: Upload plugins
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirStretch-macOS-10.8-legacy
+          path: dist/*.zip
