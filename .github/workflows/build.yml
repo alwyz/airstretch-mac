@@ -67,10 +67,12 @@ jobs:
           -DCMAKE_CXX_FLAGS="-Wunguarded-availability"
 
       - name: Build
-        run: cmake --build build-legacy --config Release --parallel
+        run: |
+          set -o pipefail
+          cmake --build build-legacy --config Release --parallel 2>&1 | tee build-legacy/build.log
 
       - name: Check binaries for OS X 10.8 compatibility
-        run: scripts/check-legacy-mac.sh build-legacy/AirStretch_artefacts/Release
+        run: scripts/check-legacy-mac.sh build-legacy/AirStretch_artefacts/Release build-legacy/build.log
 
       - name: Package (ditto keeps the bundles intact)
         run: |

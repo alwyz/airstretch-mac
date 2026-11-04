@@ -1,16 +1,27 @@
 #!/usr/bin/env bash
 # Checks that the legacy Mac plugins can load on OS X 10.8 Mountain Lion.
 # Run on macOS after building with -DAIRSTRETCH_LEGACY_MAC=ON:
-#   scripts/check-legacy-mac.sh build-legacy/AirStretch_artefacts/Release
+#   scripts/check-legacy-mac.sh build-legacy/AirStretch_artefacts/Release [build.log]
 #
 # Checks, for each plugin binary:
 #   * 64-bit Intel only (Pro Tools 11 / Mountain Lion are Intel)
 #   * OS X 10.8 minimum version stamped in the binary (LC_VERSION_MIN_MACOSX),
 #     and no newer-format load commands that a 10.8 loader can't read
 #   * only links system libraries and frameworks that exist on 10.8
+#   * with a build log compiled with -Wunguarded-availability: every API the
+#     compiler flagged as newer than 10.8 is weak-linked, so the plugin still
+#     loads on 10.8 (code paths using it are guarded at runtime)
 set -uo pipefail
 
-ART="${1:?usage: check-legacy-mac.sh <artefacts dir>}"
+ART="${1:?usage: check-legacy-mac.sh <artefacts dir> [build log]}"
+LOG="${2:-}"
+
+newer_apis=""
+if [ -n "$LOG" ] && [ -f "$LOG" ]; then
+    newer_apis=$(grep -oE "'[A-Za-z_][A-Za-z0-9_]*' is only available on macOS (10\.(9|1[0-9])|1[1-9]|2[0-9])" "$LOG" \
+                 | sed -E "s/^'([^']+)'.*/\1/" | sort -u)
+    echo "APIs newer than 10.8 used in the build: $(echo $newer_apis | wc -w | tr -d ' ')"
+fi
 fail=0
 bad() { echo "  FAIL: $*"; fail=1; }
 
@@ -56,6 +67,23 @@ for b in "${bins[@]}"; do
             *) bad "unexpected dependency $lib" ;;
         esac
     done < <(otool -L "$b" | tail -n +2 | awk '{print $1}' | grep -v "^$b")
+
+    if [ -n "$newer_apis" ]; then
+        und=$(nm -m "$b" | grep "(undefined)")
+        weak=0; strong=0
+        for api in $newer_apis; do
+            # ObjC classes appear as _OBJC_CLASS_$_Name, functions/globals as _Name
+            lines=$(echo "$und" | grep -E "[[:space:]](_OBJC_CLASS_\\\$_|_OBJC_METACLASS_\\\$_|_)${api}( |\$)" || true)
+            [ -z "$lines" ] && continue        # enums/types: no symbol to link
+            if echo "$lines" | grep -qv "weak"; then
+                bad "$api (newer than 10.8) is strongly linked: the plugin would not load on 10.8"
+                strong=$((strong + 1))
+            else
+                weak=$((weak + 1))
+            fi
+        done
+        echo "  newer-than-10.8 symbols: $weak weak-linked, $strong strongly linked"
+    fi
 done
 
 for p in "$ART"/VST3/*.vst3/Contents/Info.plist "$ART"/AU/*.component/Contents/Info.plist; do
