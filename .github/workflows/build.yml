@@ -49,6 +49,8 @@ jobs:
   mac-legacy:
     name: macOS 10.8 legacy
     runs-on: macos-15
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -76,13 +78,43 @@ jobs:
 
       - name: Package (ditto keeps the bundles intact)
         run: |
-          mkdir -p dist
-          cd build-legacy/AirStretch_artefacts/Release
-          ditto -c -k --keepParent VST3/AirStretch.vst3 "$GITHUB_WORKSPACE/dist/AirStretch-VST3-macOS-10.8.zip"
-          ditto -c -k --keepParent AU/AirStretch.component "$GITHUB_WORKSPACE/dist/AirStretch-AU-macOS-10.8.zip"
+          PKG=dist/AirStretch-macOS-10.8
+          mkdir -p "$PKG/VST3" "$PKG/AU"
+          ditto build-legacy/AirStretch_artefacts/Release/VST3/AirStretch.vst3 "$PKG/VST3/AirStretch.vst3"
+          ditto build-legacy/AirStretch_artefacts/Release/AU/AirStretch.component "$PKG/AU/AirStretch.component"
+          cat > "$PKG/INSTALL.txt" <<'TXT'
+          AirStretch for OS X 10.8 Mountain Lion (64-bit Intel)
+
+          The VST3 and AU are "bundles": folders that Finder may show as folders
+          on older systems. Copy each whole item, not just what is inside it.
+
+            VST3/AirStretch.vst3       ->  /Library/Audio/Plug-Ins/VST3/
+            AU/AirStretch.component    ->  /Library/Audio/Plug-Ins/Components/
+
+          Then rescan plugins in your host (e.g. Blue Cat PatchWork).
+
+          If the plugin is not listed after a rescan, run this in Terminal and rescan:
+            sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/AirStretch.vst3 /Library/Audio/Plug-Ins/Components/AirStretch.component
+          TXT
+          sed -i '' 's/^          //' "$PKG/INSTALL.txt"
+          ditto -c -k --keepParent "$PKG" dist/AirStretch-macOS-10.8.zip
+          echo "Contents of AirStretch-macOS-10.8.zip:"
+          unzip -l dist/AirStretch-macOS-10.8.zip
 
       - name: Upload plugins
         uses: actions/upload-artifact@v4
         with:
           name: AirStretch-macOS-10.8-legacy
-          path: dist/*.zip
+          path: dist/AirStretch-macOS-10.8.zip
+
+      # A release gives a direct download link (no artifact zip around the zip)
+      - name: Publish as the "mac-10.8-latest" release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete mac-10.8-latest --yes --cleanup-tag || true
+          gh release create mac-10.8-latest dist/AirStretch-macOS-10.8.zip \
+            --title "AirStretch for OS X 10.8 (latest build)" \
+            --notes "VST3 and AU for OS X 10.8 Mountain Lion, 64-bit Intel. Built from ${GITHUB_SHA::7}. See INSTALL.txt inside the zip." \
+            --target "$GITHUB_SHA"
